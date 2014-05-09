@@ -1,13 +1,18 @@
 package story_tester
 
 import (
-	"github.com/tildedave/go-hpack-impl/hpack"
-	"github.com/stretchr/testify/assert"
-	"testing"
-	"io/ioutil"
 	"encoding/json"
 	"encoding/hex"
+	"github.com/tildedave/go-hpack-impl/hpack"
+	"github.com/stretchr/testify/assert"
+	"io/ioutil"
+	"os"
+	"path/filepath"
+	"reflect"
 	"sort"
+	"strings"
+	"testing"
+	"fmt"
 )
 
 type Case struct {
@@ -20,9 +25,16 @@ type Case struct {
 type Story struct {
 	Cases []Case
 	Description string
+	Draft int
 }
 
-func testStoryFile(t *testing.T, filePath string) {
+const (
+	Success = iota
+	Failure
+	Skipped
+)
+
+func testStoryFile(t *testing.T, filePath string) int {
 	storyBytes, err := ioutil.ReadFile(filePath)
 	assert.Nil(t, err)
 
@@ -30,10 +42,18 @@ func testStoryFile(t *testing.T, filePath string) {
 
 	json.Unmarshal(storyBytes, &story)
 	context := hpack.NewEncodingContext()
+	context.HeaderTable.MaxSize = story.Cases[0].HeaderTableSize
 
-	t.Log("--> ", story.Description)
+	if story.Draft != 7 {
+		fmt.Printf("Skipped %s (Draft %d)\n", filePath, story.Draft)
+		return Skipped
+	}
+
+	t.Log(filePath, ":", story.Description)
 
 	for _, c := range story.Cases {
+		t.Log("Decoding", c.Wire)
+
 		wire, err := hex.DecodeString(c.Wire)
 		assert.Nil(t, err, "Unable to decode hex string")
 
@@ -54,8 +74,12 @@ func testStoryFile(t *testing.T, filePath string) {
 		sort.Sort(expectedSet)
 		sort.Sort(hs)
 
-		assert.Equal(t, expectedHeaders, hs.Headers)
+		if !reflect.DeepEqual(expectedHeaders, hs.Headers) {
+			return Failure
+		}
 	}
+
+	return Success
 }
 
 func TestStory(t *testing.T) {
@@ -63,6 +87,37 @@ func TestStory(t *testing.T) {
 		t.Skip("Skipping test in short mode.")
 	}
 
+	attempts := 0
+	fails := 0
+	crashes := 0
+	skipped := 0
+	success := 0
 
-	testStoryFile(t, "../story_tester/story_00.json")
+	filepath.Walk("hpack-test-case", func (path string, info os.FileInfo, err error) error {
+		defer func() {
+			if r := recover(); r != nil {
+				crashes += 1
+				fails += 1
+			}
+		}()
+
+		if strings.HasSuffix(path, ".json") {
+			attempts += 1
+			result := testStoryFile(t, path)
+			if result == Failure {
+				fmt.Println("Failed", path)
+				fails += 1
+			} else if result == Success {
+				success += 1
+			} else if result == Skipped {
+				skipped += 1
+			}
+		}
+		return nil
+	})
+
+	fmt.Printf("Attempted %d test cases\n", attempts)
+	fmt.Printf("\tFailures: %d (%d crashed)\n", fails, crashes)
+	fmt.Printf("\tSuccesses: %d\n", success)
+	fmt.Printf("\tSkipped: %d\n", skipped)
 }
