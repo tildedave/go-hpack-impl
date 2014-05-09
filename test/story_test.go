@@ -96,6 +96,7 @@ func TestStory(t *testing.T) {
 	filepath.Walk("../hpack-test-case", func (path string, info os.FileInfo, err error) error {
 		defer func() {
 			if r := recover(); r != nil {
+				fmt.Println("Failed", path, " (Crashed)")
 				crashes += 1
 				fails += 1
 			}
