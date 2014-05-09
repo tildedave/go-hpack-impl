@@ -49,16 +49,16 @@ func testStoryFile(t *testing.T, filePath string) int {
 		return Skipped
 	}
 
-	t.Log(filePath, ":", story.Description)
-
 	for _, c := range story.Cases {
-		t.Log("Decoding", c.Wire)
-
 		wire, err := hex.DecodeString(c.Wire)
-		assert.Nil(t, err, "Unable to decode hex string")
+		if err != nil {
+			return Failure
+		}
 
 		hs, err := context.Decode(string(wire))
-		assert.Nil(t, err, "Unable to decode wire into HeaderSet")
+		if err != nil {
+			return Failure
+		}
 
 		expectedHeaders := make([]hpack.HeaderField, 0)
 		for _, h := range c.Headers {
@@ -93,7 +93,7 @@ func TestStory(t *testing.T) {
 	skipped := 0
 	success := 0
 
-	filepath.Walk("hpack-test-case", func (path string, info os.FileInfo, err error) error {
+	filepath.Walk("../hpack-test-case", func (path string, info os.FileInfo, err error) error {
 		defer func() {
 			if r := recover(); r != nil {
 				crashes += 1
